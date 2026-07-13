@@ -1,0 +1,102 @@
+# =============================================================================
+# Eloura AI — Local Development Orchestration
+# Spins up Mongo + hot-reloading server + hot-reloading client.
+# For production you build the multi-stage server/Dockerfile separately.
+#
+#   docker compose up            # start the full local stack
+#   docker compose up --build    # rebuild images after dependency changes
+#   docker compose down -v        # stop and wipe the Mongo volume
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # MongoDB — persistent local database
+  # ---------------------------------------------------------------------------
+  mongo:
+    image: mongo:7
+    container_name: eloura-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-secret}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-eloura}
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eloura-net
+
+  # ---------------------------------------------------------------------------
+  # API server — ts-node-dev with source volume-mounted for hot reload
+  # ---------------------------------------------------------------------------
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.dev
+    container_name: eloura-server
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "${SERVER_PORT:-5000}:5000"
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASSWORD:-secret}@mongo:27017/${MONGO_DB:-eloura}?authSource=admin
+      CLIENT_ORIGIN: http://localhost:5173
+      JWT_SECRET: ${JWT_SECRET:-dev_only_change_me_to_a_long_random_string}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+    volumes:
+      # Mount source for live reload, but keep container's node_modules
+      # (anonymous volume) so host modules never shadow the image's.
+      - ./server:/app
+      - /app/node_modules
+    networks:
+      - eloura-net
+
+  # ---------------------------------------------------------------------------
+  # Client — Vite dev server with HMR over volume mount
+  # ---------------------------------------------------------------------------
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile.dev
+    container_name: eloura-client
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "${CLIENT_PORT:-5173}:5173"
+    environment:
+      # Vite needs polling to detect file changes inside Docker on some hosts.
+      CHOKIDAR_USEPOLLING: "true"
+      # Server-side Vite proxy target: use the compose service name, NOT
+      # localhost — inside this container localhost is the client itself.
+      VITE_API_URL: http://server:5000
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    networks:
+      - eloura-net
+
+volumes:
+  mongo-data:
+    driver: local
+
+networks:
+  eloura-net:
+    driver: bridge

@@ -1,0 +1,21 @@
+import { Navigate } from 'react-router-dom';
+import type { ReactNode } from 'react';
+
+import { useAuth } from '../context/AuthContext';
+
+interface ProtectedRouteProps {
+  children: ReactNode;
+}
+
+/** Redirects unauthenticated visitors to /login. */
+export function ProtectedRoute({ children }: ProtectedRouteProps): JSX.Element {
+  const { isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+export default ProtectedRoute;
