@@ -134,7 +134,7 @@ When credits reach zero, users are seamlessly redirected to the pricing page to 
 ### Payment Successful
 
 <p align="center">
-  <img src="assets/Payment%20Successful.png" width="900" alt="Payment Successful">
+  <img src="assets/Payment%20Successful.png" width="900" alt="Payment Success">
 </p>
 
 ### Credits Updated
